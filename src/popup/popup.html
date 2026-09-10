@@ -1,7 +1,324 @@
 <!doctype html>
-<meta charset="utf-8">
-<title>SEO Silo Analyzer</title>
-<body style="width:280px;margin:0;padding:16px;font:13px system-ui,sans-serif">
-  <strong>SEO Silo Analyzer</strong>
-  <p>Not implemented yet — see REQUIREMENTS.md.</p>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SEO Silo Analyzer</title>
+  <link rel="stylesheet" href="../styles/theme.css">
+  <link rel="stylesheet" href="../styles/popup.css">
+</head>
+<body>
+  <div id="popup-container">
+    <!-- Header Bar -->
+    <header class="popup-header">
+      <div class="brand-section">
+        <img src="../../assets/icons/icon32.png" alt="SEO Silo Analyzer" class="brand-logo-img">
+        <div>
+          <h1 class="brand-title">SEO SILO ANALYZER</h1>
+          <div class="brand-subtitle">SITE ARCHITECTURE ENGINE</div>
+        </div>
+      </div>
+      <div class="header-actions">
+        <button id="theme-toggle" class="theme-toggle-btn" title="Toggle Light/Dark Theme" aria-label="Toggle Theme">
+          <svg class="icon-svg" viewBox="0 0 24 24" id="theme-icon">
+            <!-- Sun Icon (Default in Dark Mode to switch to Light Mode) -->
+            <circle cx="12" cy="12" r="5"></circle>
+            <line x1="12" y1="1" x2="12" y2="3"></line>
+            <line x1="12" y1="21" x2="12" y2="23"></line>
+            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+            <line x1="1" y1="12" x2="3" y2="12"></line>
+            <line x1="21" y1="12" x2="23" y2="12"></line>
+            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- Navigation Tabs -->
+    <nav class="view-nav" aria-label="Popup view navigation">
+      <button class="nav-tab active" id="tab-setup" data-view="setup">Audit Setup</button>
+      <button class="nav-tab" id="tab-live" data-view="live">Live Crawl</button>
+      <button class="nav-tab" id="tab-summary" data-view="summary">Summary</button>
+    </nav>
+
+    <!-- Main Content Container -->
+    <main class="popup-content">
+      
+      <!-- Panel 1: Audit Setup View (FR-01) -->
+      <section id="panel-setup" class="view-panel active">
+        <!-- Target Start URL -->
+        <div class="form-group">
+          <label class="form-label" for="start-url">
+            Target Website URL
+            <span class="info-tooltip-wrapper">
+              <span class="info-icon">?</span>
+              <span class="tooltip-content">Starting page for the crawl. The engine discovers internal links starting from this URL.</span>
+            </span>
+          </label>
+          <div class="url-input-wrapper">
+            <input type="url" id="start-url" class="input-text" placeholder="https://example.com" required>
+            <button id="btn-detect-tab" class="btn btn-outline btn-detect" title="Use current tab URL">Active Tab</button>
+          </div>
+          <div id="url-error-msg" class="inline-warning">⚠ Please enter a valid site URL (e.g. https://example.com)</div>
+        </div>
+
+        <!-- Crawl Limits Card -->
+        <div class="card-section">
+          <div class="card-title">
+            <span>Crawl Capacity</span>
+            <span class="text-muted font-mono" id="pages-cap-label">100 pages</span>
+          </div>
+
+          <!-- Max Pages Segmented Selector -->
+          <div class="form-group">
+            <label class="form-label">
+              Max Pages Limit
+              <span class="info-tooltip-wrapper">
+                <span class="info-icon">?</span>
+                <span class="tooltip-content">Ceiling for total unique HTML pages discovered and analyzed in one crawl run.</span>
+              </span>
+            </label>
+            <div class="chip-group" id="max-pages-chips">
+              <button class="chip-btn active" data-value="100">100</button>
+              <button class="chip-btn" data-value="500">500</button>
+              <button class="chip-btn" data-value="1000">1000</button>
+              <button class="chip-btn" data-value="custom">Custom</button>
+            </div>
+            <div id="custom-pages-wrapper" style="display: none; margin-top: 0.4rem;">
+              <input type="number" id="max-pages-custom" class="input-text custom-limit-input" placeholder="e.g. 250" min="1" max="5000" value="250">
+            </div>
+          </div>
+
+          <!-- Max Crawl Depth -->
+          <div class="form-group">
+            <label class="form-label" for="crawl-depth">
+              Max Click Depth
+              <span class="info-tooltip-wrapper">
+                <span class="info-icon">?</span>
+                <span class="tooltip-content">Shortest link distance from homepage (Home = Depth 0). Limits how deep the crawler follows links.</span>
+              </span>
+            </label>
+            <select id="crawl-depth" class="select-input">
+              <option value="1">1 Hop (Homepage only)</option>
+              <option value="2">2 Hops (Main categories)</option>
+              <option value="3" selected>3 Hops (Standard site structure)</option>
+              <option value="5">5 Hops (Deep site architecture)</option>
+              <option value="0">Unlimited depth</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Crawler Configuration & Rate Throttling -->
+        <div class="card-section">
+          <div class="card-title">
+            <span>Crawler Behavior</span>
+          </div>
+
+          <!-- Subdomains Toggle -->
+          <div class="toggle-row">
+            <div>
+              <div class="toggle-label">
+                Include Subdomains
+                <span class="info-tooltip-wrapper">
+                  <span class="info-icon">?</span>
+                  <span class="tooltip-content">Follow links pointing to subdomains under the same primary registrable domain.</span>
+                </span>
+              </div>
+              <div class="toggle-sublabel">Crawl subdomains under registrable domain</div>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="toggle-subdomains">
+              <span class="slider"></span>
+            </label>
+          </div>
+
+          <!-- Nofollow Toggle -->
+          <div class="toggle-row">
+            <div>
+              <div class="toggle-label">
+                Follow Nofollow Links
+                <span class="info-tooltip-wrapper">
+                  <span class="info-icon">?</span>
+                  <span class="tooltip-content">Crawl internal links tagged with rel="nofollow" to uncover potential orphan or hidden pages.</span>
+                </span>
+              </div>
+              <div class="toggle-sublabel">Follow internal links marked rel="nofollow"</div>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="toggle-nofollow">
+              <span class="slider"></span>
+            </label>
+          </div>
+
+          <!-- Politeness Delay Slider -->
+          <div class="form-group" style="margin-top: 0.3rem;">
+            <div class="toggle-row">
+              <span class="form-label" style="margin: 0;">
+                Request Delay
+                <span class="info-tooltip-wrapper">
+                  <span class="info-icon">?</span>
+                  <span class="tooltip-content">Politeness delay between request fetches to avoid overloading your site's server.</span>
+                </span>
+              </span>
+              <span class="font-mono text-xs text-muted" id="delay-value">250 ms</span>
+            </div>
+            <input type="range" id="crawl-delay" class="range-slider" min="100" max="2000" step="50" value="250">
+          </div>
+        </div>
+
+        <!-- Optional Host Permission Banner -->
+        <div id="permission-banner" class="permission-banner">
+          <div class="permission-text">
+            <strong>Host Permission:</strong> Required to audit this domain.
+          </div>
+          <button id="btn-request-perm" class="btn btn-outline" style="padding: 0.3rem 0.6rem; font-size: 0.725rem;">Grant Access</button>
+        </div>
+      </section>
+
+      <!-- Panel 2: Live Crawl Monitor View (FR-01, NFR-01) -->
+      <section id="panel-live" class="view-panel">
+        <div class="live-header-card">
+          <div class="live-status-row">
+            <div class="pulse-indicator">
+              <div class="pulse-dot" id="pulse-dot"></div>
+              <span id="live-status-text">Crawling Active...</span>
+            </div>
+            <span class="font-mono text-xs" id="crawl-progress-percent">0%</span>
+          </div>
+
+          <div class="progress-container">
+            <div class="progress-bar" id="crawl-progress-bar"></div>
+          </div>
+
+          <div class="live-url-ticker" id="live-url-ticker" title="Currently fetching URL">
+            Fetching: Idle
+          </div>
+        </div>
+
+        <!-- Real-time Stats Grid -->
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="stat-value" id="stat-crawled">0</div>
+            <div class="stat-label">Pages Crawled</div>
+          </div>
+
+          <div class="stat-card">
+            <div class="stat-value" id="stat-queue">0</div>
+            <div class="stat-label">Queue Discovered</div>
+          </div>
+
+          <div class="stat-card">
+            <div class="stat-value" id="stat-depth">0</div>
+            <div class="stat-label">Max Depth</div>
+          </div>
+
+          <div class="stat-card">
+            <div class="stat-value" id="stat-errors">0</div>
+            <div class="stat-label">Errors / 404s</div>
+          </div>
+        </div>
+
+        <!-- Timer Card -->
+        <div class="stat-card" style="flex-direction: row; justify-content: space-between; align-items: center;">
+          <span class="stat-label">Elapsed Time</span>
+          <span class="font-mono text-base text-primary" id="stat-elapsed">00:00</span>
+        </div>
+      </section>
+
+      <!-- Panel 3: Audit Health Summary View (FR-16, FR-17, FR-21) -->
+      <section id="panel-summary" class="view-panel">
+        <!-- Health Gauge Card -->
+        <div class="health-overview-card">
+          <div class="health-score-badge">
+            <span class="score-number" id="summary-score">--</span>
+            <span class="score-max">/ 100</span>
+          </div>
+          <div class="health-details">
+            <div class="health-status-title" id="summary-status-title">No Audit Yet</div>
+            <div class="health-site-url" id="summary-site-url">Run a crawl to see results</div>
+            <div style="margin-top: 0.2rem;">
+              <span class="badge badge-passed" id="summary-status-badge">IDLE</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 6 Category Scores Grid (FR-16) -->
+        <div class="card-section">
+          <div class="card-title">
+            <span>Category Health Breakdown</span>
+          </div>
+          <div class="categories-grid">
+            <div class="category-item">
+              <span class="category-name">Architecture</span>
+              <span class="category-score" id="score-arch">--</span>
+            </div>
+            <div class="category-item">
+              <span class="category-name">Internal Links</span>
+              <span class="category-score" id="score-links">--</span>
+            </div>
+            <div class="category-item">
+              <span class="category-name">Indexability</span>
+              <span class="category-score" id="score-index">--</span>
+            </div>
+            <div class="category-item">
+              <span class="category-name">Technical SEO</span>
+              <span class="category-score" id="score-tech">--</span>
+            </div>
+            <div class="category-item">
+              <span class="category-name">Content Struct.</span>
+              <span class="category-score" id="score-content">--</span>
+            </div>
+            <div class="category-item">
+              <span class="category-name">Schema Markup</span>
+              <span class="category-score" id="score-schema">--</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Issues Breakdown Pills Bar (FR-17) -->
+        <div class="issue-summary-bar">
+          <div class="issue-pill">
+            <span class="issue-count" id="count-critical">0</span>
+            <span class="issue-type">Critical</span>
+          </div>
+          <div class="issue-pill">
+            <span class="issue-count" id="count-warnings">0</span>
+            <span class="issue-type">Warnings</span>
+          </div>
+          <div class="issue-pill">
+            <span class="issue-count" id="count-passed">0</span>
+            <span class="issue-type">Passed</span>
+          </div>
+        </div>
+      </section>
+
+    </main>
+
+    <!-- Contextual Footer Actions -->
+    <footer class="popup-footer">
+      <!-- Footer Buttons for Setup Panel -->
+      <div id="footer-setup-actions" style="display: flex; width: 100%; gap: 0.5rem;">
+        <button id="btn-start-crawl" class="btn btn-primary" style="width: 100%;">
+          Start Site Crawl
+        </button>
+      </div>
+
+      <!-- Footer Buttons for Live Panel -->
+      <div id="footer-live-actions" style="display: none; width: 100%; gap: 0.5rem;">
+        <button id="btn-pause-crawl" class="btn btn-outline" style="flex: 1;">Pause</button>
+        <button id="btn-stop-crawl" class="btn btn-primary" style="flex: 1;">Stop Audit</button>
+      </div>
+
+      <!-- Footer Buttons for Summary Panel -->
+      <div id="footer-summary-actions" style="display: none; width: 100%; gap: 0.5rem;">
+        <button id="btn-export-audit" class="btn btn-outline" style="flex: 1;">Export</button>
+        <button id="btn-open-dashboard" class="btn btn-primary" style="flex: 1.5;">Open Dashboard</button>
+      </div>
+    </footer>
+  </div>
+
+  <script type="module" src="popup.js"></script>
 </body>
+</html>
