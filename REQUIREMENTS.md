@@ -550,10 +550,14 @@ Anything asserted about a `chrome.*` API must be verified against
 These are genuine ambiguities in the source spec — they need answers before
 the affected work starts.
 
-1. **Fetch vs. render.** Crawling by `fetch` gives raw HTML (fast, cheap) but
-   misses SPA-rendered links. Rendering each page in a tab is accurate but far
-   slower. MVP default: fetch-first with an opt-in rendered pass? Needs a
-   decision (affects FR-01, TC-10, NFR-01).
+1. ~~**Fetch vs. render.**~~ **Decided (FR-01 build):** fetch-only for the MVP.
+   Raw HTML is parsed with regex, because MV3 service workers have no DOM
+   (verified: that is why the offscreen API has a `DOM_PARSER` reason). This
+   means **JS-injected links are not discovered** — a known, documented
+   limitation, not a bug. Two upgrade paths remain open, in order of cost:
+   an offscreen document with `DOM_PARSER` for accurate parsing of the same
+   fetched HTML, then an opt-in rendered pass in a tab for SPA sites
+   (Phase 2, "Better SPA rendering analysis").
 2. **Host permissions model.** Broad `*://*/*` at install (easy, worse for
    store review and trust) vs. per-site optional permission requested at audit
    start (recommended). Affects the manifest and onboarding UX.
@@ -566,8 +570,11 @@ the affected work starts.
    need published weights and per-check point values.
 6. **PDF export.** "If practical" — decide whether it ships in Phase 1 or
    defers to print-to-PDF from the HTML report.
-7. **Build stack.** Undecided: plain JS with no build step (loads unpacked
-   as-is, zero tooling) vs. TypeScript + a bundler (types for the graph/page
-   models, at the cost of a build). Also undecided: UI framework, graph
-   rendering library for FR-04, and test runner. Nothing in the repo assumes
-   any of these yet.
+7. **Build stack.** **Partly decided (FR-01 build):** plain JS as ES modules,
+   no bundler, no build step — the extension loads unpacked exactly as it sits
+   in the repo. Tests run on Node's built-in runner (`npm test`), no framework
+   and no dependencies; `package.json` exists only to declare `"type":
+   "module"` and that script. **Still open:** UI framework and the graph
+   rendering library for FR-04 — the dashboard is where imperative DOM code
+   stops paying off, and that decision should be made before it is written,
+   not after.

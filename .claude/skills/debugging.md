@@ -48,9 +48,10 @@ page record. Save the offending input somewhere you can re-run against it.
 
 ## 5. Verify and prevent regression
 
-- Add a check that fails before the fix and passes after. No test runner is
-  set up in this repo yet — if the fix needs one, propose it rather than
-  fabricating a config file.
+- Add a check to `tests/` that fails before the fix and passes after, and run
+  `npm test`. If the buggy logic sits in `crawler.js` or `db.js` (which need
+  `chrome.*`/IndexedDB), extract it into a pure module first — that's how
+  `frontier.js` came to exist.
 - For a crawl bug, keep the offending input (the URL, or the saved HTML) as
   the check's fixture. It's the cheapest regression test available.
 - Note the root cause and fix in the task summary

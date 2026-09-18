@@ -35,13 +35,20 @@ Applies to any non-trivial task (more than a one-line fix).
 
 ## 5. Verify
 
-There is no test runner and no build step in this repo yet. Until one is
-added, don't pretend otherwise — verify with what actually exists:
+`npm test` runs Node's built-in test runner over `tests/`. There is no build
+step. Verify with what actually exists:
 
-- Non-trivial logic (URL normalization, crawl queue, HTML/sitemap parser,
-  depth/graph traversal, scoring) gets **one runnable check** — the smallest
-  thing that fails if the logic breaks. If no test setup exists when you need
-  one, say so and propose it rather than inventing a config.
+- Non-trivial logic (URL normalization, crawl frontier, HTML/sitemap parser,
+  depth/graph traversal, scoring) gets **one runnable check** in `tests/` —
+  the smallest thing that fails if the logic breaks. Code that touches
+  `chrome.*` or IndexedDB can't run under Node: keep the deciding logic in a
+  pure module (like `src/background/frontier.js`) and test that, rather than
+  mocking chrome.
+- Crawl behaviour that only shows up on a real site — ordering under a page
+  cap, sitemap volume, entity-encoded URLs — gets checked against the live
+  site's actual robots.txt, sitemap and HTML before concluding anything.
+  Passing unit tests have already missed a crawler that skipped a site's
+  entire navigation.
 - If you touched `manifest.json` or icons: load unpacked at
   `chrome://extensions` and confirm zero manifest errors. Validate the JSON
   parses before claiming it works.

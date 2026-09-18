@@ -5,15 +5,12 @@
 1. Search first. Grep for the capability by name and by likely synonyms
    (e.g. "normalize", "url", "crawl", "depth", "silo", "canonical") before
    assuming it doesn't exist.
-2. Check `src/shared/utils/`, `src/shared/services/`, `src/shared/types/`,
-   `src/shared/constants/` — this is the designated reuse layer for this repo.
+2. Check every file in `src/shared/` — currently `url.js`, `parse.js`,
+   `db.js`. This is the designated reuse layer. It's flat files, not
+   `utils/`/`services/` subfolders; don't create a folder to hold one file.
 3. Check sibling feature folders under `src/` (`src/popup/`,
    `src/background/`, and the UI/content folders as they appear) for a local
    helper that should be promoted to `src/shared/` instead of duplicated.
-
-Most of `src/` doesn't exist yet — the repo is at spec stage. That is not a
-licence to skip the search; it means the search is cheap. Don't cite a path
-from this file as if it exists without looking.
 4. Only write new code when steps 1-3 come up empty. State in one line what
    you searched and why nothing matched.
 

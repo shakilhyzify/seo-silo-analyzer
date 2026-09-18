@@ -25,8 +25,8 @@ short — this is a factual report, not a narrative.
 State what you actually ran. "Not verified" is a valid entry; a claimed
 check that never ran is not.
 
-- Check run: <!-- what, and the result. No test runner exists yet — say so
-     if the logic needs one. -->
+- Check run: <!-- what, and the result. `npm test` covers pure modules only —
+     say what it did NOT exercise (chrome.*, IndexedDB, a live site). -->
 - [ ] Manifest/icons touched → JSON parses, loads unpacked with no errors
 - [ ] Any `chrome.*` API or permission claim checked against the docs
 

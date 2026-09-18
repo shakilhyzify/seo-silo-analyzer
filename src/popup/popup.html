@@ -101,7 +101,7 @@
               </span>
             </label>
             <select id="crawl-depth" class="select-input">
-              <option value="1">1 Hop (Homepage only)</option>
+              <option value="1">1 Hop (Home + pages it links to)</option>
               <option value="2">2 Hops (Main categories)</option>
               <option value="3" selected>3 Hops (Standard site structure)</option>
               <option value="5">5 Hops (Deep site architecture)</option>
@@ -168,12 +168,12 @@
           </div>
         </div>
 
-        <!-- Optional Host Permission Banner -->
-        <div id="permission-banner" class="permission-banner">
+        <!-- Interrupted run: the worker can be evicted mid-crawl (MV3) -->
+        <div id="resume-banner" class="permission-banner" style="display: none;">
           <div class="permission-text">
-            <strong>Host Permission:</strong> Required to audit this domain.
+            <strong>Unfinished audit:</strong> <span id="resume-detail"></span>
           </div>
-          <button id="btn-request-perm" class="btn btn-outline" style="padding: 0.3rem 0.6rem; font-size: 0.725rem;">Grant Access</button>
+          <button id="btn-resume-run" class="btn btn-outline" style="padding: 0.3rem 0.6rem; font-size: 0.725rem;">Resume</button>
         </div>
       </section>
 
@@ -205,8 +205,8 @@
           </div>
 
           <div class="stat-card">
-            <div class="stat-value" id="stat-queue">0</div>
-            <div class="stat-label">Queue Discovered</div>
+            <div class="stat-value" id="stat-discovered">0</div>
+            <div class="stat-label">URLs Discovered</div>
           </div>
 
           <div class="stat-card">
@@ -313,8 +313,10 @@
 
       <!-- Footer Buttons for Summary Panel -->
       <div id="footer-summary-actions" style="display: none; width: 100%; gap: 0.5rem;">
-        <button id="btn-export-audit" class="btn btn-outline" style="flex: 1;">Export</button>
-        <button id="btn-open-dashboard" class="btn btn-primary" style="flex: 1.5;">Open Dashboard</button>
+        <!-- Enabled by FR-20 (export) and FR-04/FR-16 (dashboard). Until then
+             the crawl output lives in IndexedDB: DevTools > Application. -->
+        <button id="btn-export-audit" class="btn btn-outline" style="flex: 1;" disabled title="Export arrives with FR-20">Export</button>
+        <button id="btn-open-dashboard" class="btn btn-primary" style="flex: 1.5;" disabled title="Dashboard arrives with FR-04">Open Dashboard</button>
       </div>
     </footer>
   </div>

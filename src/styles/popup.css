@@ -405,6 +405,7 @@
 .health-score-badge {
   display: flex;
   flex-direction: column;
+  flex-shrink: 0;
   align-items: center;
   justify-content: center;
   width: 70px;

@@ -11,9 +11,10 @@ indexability issues, redirect chains and potential content overlap.
 No backend. No account. No external API. No mandatory AI. Crawl data stays in
 the browser (IndexedDB).
 
-**Status: specification / scaffold.** Nothing is implemented yet — the popup
-and service worker are placeholders so the extension loads. Scope, feature IDs
-and acceptance criteria live in [REQUIREMENTS.md](REQUIREMENTS.md).
+**Status: FR-01 (crawler) implemented.** The crawl engine, URL normalization,
+robots.txt handling, sitemap discovery and IndexedDB persistence work. Analysis
+features (silos, orphans, scoring, export, dashboard) are not built yet. Scope,
+feature IDs and acceptance criteria live in [REQUIREMENTS.md](REQUIREMENTS.md).
 
 ## Install (development)
 
@@ -21,7 +22,17 @@ and acceptance criteria live in [REQUIREMENTS.md](REQUIREMENTS.md).
 2. Enable **Developer mode**
 3. **Load unpacked** → select this folder
 
-There is no build step yet; the folder loads as-is.
+There is no build step; the folder loads as-is (plain ES modules).
+
+Run the checks with `npm test` — Node's built-in test runner, no dependencies.
+Crawl output is inspectable while the analysis UI is being built: DevTools →
+Application → IndexedDB → `silo-analyzer` (`runs`, `pages`, `links`,
+`discovered`).
+
+A run ends as `complete` (every reachable page crawled), `page-limit` (the
+max-pages cap was hit with URLs left) or `stopped`. On a large site most runs
+are `page-limit`: linked pages are crawled first, breadth-first, and
+sitemap-only URLs fill whatever budget remains.
 
 ## Permissions
 
@@ -33,12 +44,7 @@ Requested at install:
 | `unlimitedStorage` | Crawl data for 1,000+ URL sites is stored in IndexedDB; without this the extension shares the default quota. Chrome documents this permission as covering IndexedDB. |
 | `activeTab` | Read the current tab's URL to pre-fill the audit target, and act on that tab after a user gesture. |
 | `scripting` | Inject the DOM extractor and the on-page issue highlighter (FR-19). |
-
-Requested at runtime, per site, when an audit starts:
-
-| Permission | Why |
-|------------|-----|
-| `optional_host_permissions: *://*/*` | Crawling means fetching pages of the site being audited, which is cross-origin. This is declared **optional** so nothing is granted at install — the user approves the specific origin they asked to audit. |
+| `host_permissions: *://*/*` | Crawling means fetching pages of the site being audited, which is cross-origin. |
 
 Not requested: `tabs`, `webNavigation`, `debugger`, `alarms`, `cookies`,
 `history`. If a feature later needs one, it gets added with a justification —
@@ -51,8 +57,13 @@ manifest.json          MV3 manifest
 REQUIREMENTS.md        scope, feature IDs (FR-01…FR-21), acceptance criteria
 assets/icons/          extension icons (16/32/48/128)
 assets/fonts/          Inter, Plus Jakarta Sans
-src/background/        service worker — crawl orchestration
+src/background/        service-worker.js (message router), crawler.js (fetch
+                       loop), frontier.js (crawl order + page budget, pure)
+src/shared/            url.js (normalization), parse.js (HTML/sitemap/robots),
+                       db.js (IndexedDB)
 src/popup/             toolbar popup
+src/styles/            theme + popup CSS
+tests/                 node --test checks for the pure crawl logic
 docs/                  design docs (architecture, algorithms, schema)
 ```
 
@@ -62,9 +73,12 @@ These are inherent to running inside a browser extension and are documented
 rather than hidden:
 
 - **Cross-origin fetches** require host permission for the audited origin.
-- **SPA / JS-rendered sites**: a raw `fetch` returns pre-render HTML, so links
-  injected by JavaScript can be missed. Rendered-DOM crawling is slower and is
-  an open design decision (see REQUIREMENTS.md §10).
+- **SPA / JS-rendered sites**: the crawler fetches raw HTML and does not
+  execute JavaScript, so links injected at runtime are not discovered. On a
+  client-rendered site the crawl will find far fewer pages than exist. This is
+  the MVP's biggest known gap (REQUIREMENTS.md §10.1).
+- **HTML is parsed with regex, not a DOM.** MV3 service workers have no
+  `DOMParser`. It handles ordinary markup but can misread pathological HTML.
 - **Cross-origin iframes** and **closed shadow DOM** cannot be read or
   highlighted.
 - **MV3 service workers are evicted** when idle, so long crawls must persist

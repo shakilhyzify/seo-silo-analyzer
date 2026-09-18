@@ -143,7 +143,8 @@ h1, h2, h3, h4, h5, h6 {
   border-color: var(--accent-hover);
 }
 
-.btn-primary:disabled {
+/* Every variant — an outline button that looks enabled while disabled lies. */
+.btn:disabled {
   opacity: 0.4;
   cursor: not-allowed;
 }

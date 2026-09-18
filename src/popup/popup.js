@@ -1,6 +1,10 @@
 /**
  * SEO Silo Analyzer — Extension Popup Controller
  * Phase 1 MVP Interface Logic
+ *
+ * The popup owns NO crawl state. Its DOM is destroyed the moment it closes
+ * while the crawl keeps running in the service worker, so on every open it
+ * asks the worker what is true (GET_STATE) instead of remembering.
  */
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -31,8 +35,9 @@ document.addEventListener('DOMContentLoaded', () => {
   const toggleNofollow = document.getElementById('toggle-nofollow');
   const crawlDelaySlider = document.getElementById('crawl-delay');
   const delayValueDisplay = document.getElementById('delay-value');
-  const permissionBanner = document.getElementById('permission-banner');
-  const btnRequestPerm = document.getElementById('btn-request-perm');
+  const resumeBanner = document.getElementById('resume-banner');
+  const resumeDetail = document.getElementById('resume-detail');
+  const btnResumeRun = document.getElementById('btn-resume-run');
 
   // Live Audit Controls & Stats
   const liveStatusText = document.getElementById('live-status-text');
@@ -41,7 +46,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const crawlProgressPercent = document.getElementById('crawl-progress-percent');
   const liveUrlTicker = document.getElementById('live-url-ticker');
   const statCrawled = document.getElementById('stat-crawled');
-  const statQueue = document.getElementById('stat-queue');
+  const statDiscovered = document.getElementById('stat-discovered');
   const statDepth = document.getElementById('stat-depth');
   const statErrors = document.getElementById('stat-errors');
   const statElapsed = document.getElementById('stat-elapsed');
@@ -50,50 +55,39 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnStartCrawl = document.getElementById('btn-start-crawl');
   const btnPauseCrawl = document.getElementById('btn-pause-crawl');
   const btnStopCrawl = document.getElementById('btn-stop-crawl');
-  const btnOpenDashboard = document.getElementById('btn-open-dashboard');
-  const btnExportAudit = document.getElementById('btn-export-audit');
 
   // Summary Elements
   const summaryScore = document.getElementById('summary-score');
   const summaryStatusTitle = document.getElementById('summary-status-title');
   const summarySiteUrl = document.getElementById('summary-site-url');
   const summaryStatusBadge = document.getElementById('summary-status-badge');
-  const scoreArch = document.getElementById('score-arch');
-  const scoreLinks = document.getElementById('score-links');
-  const scoreIndex = document.getElementById('score-index');
-  const scoreTech = document.getElementById('score-tech');
-  const scoreContent = document.getElementById('score-content');
-  const scoreSchema = document.getElementById('score-schema');
   const countCritical = document.getElementById('count-critical');
   const countWarnings = document.getElementById('count-warnings');
   const countPassed = document.getElementById('count-passed');
 
-  // Application State
   let currentMaxPages = 100;
-  let isCrawling = false;
-  let isPaused = false;
-  let elapsedTimeInterval = null;
-  let startTime = null;
-
-  // Inline Validation Helpers
-  function showUrlError(msg) {
-    if (urlErrorMsg) {
-      urlErrorMsg.textContent = `⚠ ${msg}`;
-      urlErrorMsg.style.display = 'block';
-    }
-    if (startUrlInput) {
-      startUrlInput.classList.add('input-error');
-      startUrlInput.focus();
+  let elapsedTimer = null;
+  let elapsedBase = null;
+  async function send(action, extra = {}) {
+    try {
+      return await chrome.runtime.sendMessage({ action, ...extra });
+    } catch (err) {
+      console.error('[popup] no response from service worker', action, err);
+      return null;
     }
   }
 
+  // Inline Validation Helpers
+  function showUrlError(msg) {
+    urlErrorMsg.textContent = `⚠ ${msg}`;
+    urlErrorMsg.style.display = 'block';
+    startUrlInput.classList.add('input-error');
+    startUrlInput.focus();
+  }
+
   function clearUrlError() {
-    if (urlErrorMsg) {
-      urlErrorMsg.style.display = 'none';
-    }
-    if (startUrlInput) {
-      startUrlInput.classList.remove('input-error');
-    }
+    urlErrorMsg.style.display = 'none';
+    startUrlInput.classList.remove('input-error');
   }
 
   // =========================================================================
@@ -118,44 +112,24 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function applyTheme(theme) {
     htmlEl.setAttribute('data-theme', theme);
-    if (themeIcon) {
-      themeIcon.innerHTML = theme === 'dark' ? SUN_SVG_PATH : MOON_SVG_PATH;
-    }
+    themeIcon.innerHTML = theme === 'dark' ? SUN_SVG_PATH : MOON_SVG_PATH;
     themeToggleBtn.setAttribute('title', `Switch to ${theme === 'dark' ? 'Light' : 'Dark'} Theme`);
-
-    // Storage persistence
-    if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
-      chrome.storage.local.set({ theme });
-    } else {
-      localStorage.setItem('silo_theme', theme);
-    }
+    chrome.storage.local.set({ theme });
   }
 
   function initTheme() {
-    if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
-      chrome.storage.local.get(['theme'], (result) => {
-        if (result.theme) {
-          applyTheme(result.theme);
-        } else {
-          const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-          applyTheme(prefersDark ? 'dark' : 'light');
-        }
-      });
-    } else {
-      const savedTheme = localStorage.getItem('silo_theme');
-      if (savedTheme) {
-        applyTheme(savedTheme);
+    chrome.storage.local.get(['theme'], (result) => {
+      if (result.theme) {
+        applyTheme(result.theme);
       } else {
-        const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-        applyTheme(prefersDark ? 'dark' : 'light');
+        applyTheme(window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
       }
-    }
+    });
   }
 
   themeToggleBtn.addEventListener('click', () => {
     const currentTheme = htmlEl.getAttribute('data-theme') || 'dark';
-    const nextTheme = currentTheme === 'dark' ? 'light' : 'dark';
-    applyTheme(nextTheme);
+    applyTheme(currentTheme === 'dark' ? 'light' : 'dark');
   });
 
   initTheme();
@@ -165,26 +139,11 @@ document.addEventListener('DOMContentLoaded', () => {
   // =========================================================================
 
   function switchView(viewName) {
-    navTabs.forEach(tab => {
-      if (tab.dataset.view === viewName) {
-        tab.classList.add('active');
-      } else {
-        tab.classList.remove('active');
-      }
-    });
-
-    viewPanels.forEach(panel => {
-      if (panel.id === `panel-${viewName}`) {
-        panel.classList.add('active');
-      } else {
-        panel.classList.remove('active');
-      }
-    });
+    navTabs.forEach(tab => tab.classList.toggle('active', tab.dataset.view === viewName));
+    viewPanels.forEach(panel => panel.classList.toggle('active', panel.id === `panel-${viewName}`));
 
     Object.keys(footerActionGroups).forEach(key => {
-      if (footerActionGroups[key]) {
-        footerActionGroups[key].style.display = (key === viewName) ? 'flex' : 'none';
-      }
+      footerActionGroups[key].style.display = (key === viewName) ? 'flex' : 'none';
     });
   }
 
@@ -195,37 +154,16 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // =========================================================================
-  // 3. Tab Detection & Host Permission Verification
+  // 3. Tab Detection
   // =========================================================================
 
-  function checkHostPermission(urlStr) {
-    if (typeof chrome === 'undefined' || !chrome.permissions) return;
-    try {
-      const url = new URL(urlStr);
-      const originPattern = `${url.protocol}//${url.hostname}/*`;
-
-      chrome.permissions.contains({ origins: [originPattern] }, (granted) => {
-        if (permissionBanner) {
-          permissionBanner.style.display = granted ? 'none' : 'flex';
-        }
-      });
-    } catch (e) {
-      if (permissionBanner) permissionBanner.style.display = 'none';
-    }
-  }
-
   function detectActiveTab() {
-    if (typeof chrome !== 'undefined' && chrome.tabs && chrome.tabs.query) {
-      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-        if (tabs && tabs.length > 0 && tabs[0].url) {
-          const currentUrl = tabs[0].url;
-          if (currentUrl.startsWith('http://') || currentUrl.startsWith('https://')) {
-            startUrlInput.value = currentUrl;
-            checkHostPermission(currentUrl);
-          }
-        }
-      });
-    }
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      const currentUrl = tabs && tabs[0] && tabs[0].url;
+      if (currentUrl && /^https?:\/\//.test(currentUrl)) {
+        startUrlInput.value = currentUrl;
+      }
+    });
   }
 
   btnDetectTab.addEventListener('click', () => {
@@ -235,28 +173,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   startUrlInput.addEventListener('input', () => {
     clearUrlError();
-    checkHostPermission(startUrlInput.value);
   });
-
-  if (btnRequestPerm) {
-    btnRequestPerm.addEventListener('click', () => {
-      if (!startUrlInput.value) return;
-      try {
-        const url = new URL(startUrlInput.value);
-        const originPattern = `${url.protocol}//${url.hostname}/*`;
-        chrome.permissions.request({ origins: [originPattern] }, (granted) => {
-          if (granted && permissionBanner) {
-            permissionBanner.style.display = 'none';
-          }
-        });
-      } catch (e) {
-        console.error('Invalid URL format for permissions request', e);
-      }
-    });
-  }
-
-  // Initial detection on launch
-  detectActiveTab();
 
   // =========================================================================
   // 4. Form Controls & Preset Segmented Chips
@@ -293,22 +210,31 @@ document.addEventListener('DOMContentLoaded', () => {
   // 5. Crawl Actions & Messaging Integration
   // =========================================================================
 
-  function startTimer() {
-    startTime = Date.now();
-    if (elapsedTimeInterval) clearInterval(elapsedTimeInterval);
+  /** 40276 → "40,276". Crawl counts get large fast. */
+  const formatCount = (n) => (n ?? 0).toLocaleString();
 
-    elapsedTimeInterval = setInterval(() => {
-      const elapsedSeconds = Math.floor((Date.now() - startTime) / 1000);
-      const mins = String(Math.floor(elapsedSeconds / 60)).padStart(2, '0');
-      const secs = String(elapsedSeconds % 60).padStart(2, '0');
-      statElapsed.textContent = `${mins}:${secs}`;
+  function formatElapsed(ms) {
+    const totalSeconds = Math.floor(ms / 1000);
+    const mins = String(Math.floor(totalSeconds / 60)).padStart(2, '0');
+    const secs = String(totalSeconds % 60).padStart(2, '0');
+    return `${mins}:${secs}`;
+  }
+
+  /** Ticks locally, but anchored to the worker's elapsed time, not the popup's. */
+  function startTimer(elapsedMs) {
+    elapsedBase = Date.now() - (elapsedMs || 0);
+    stopTimer();
+    statElapsed.textContent = formatElapsed(Date.now() - elapsedBase);
+
+    elapsedTimer = setInterval(() => {
+      statElapsed.textContent = formatElapsed(Date.now() - elapsedBase);
     }, 1000);
   }
 
   function stopTimer() {
-    if (elapsedTimeInterval) {
-      clearInterval(elapsedTimeInterval);
-      elapsedTimeInterval = null;
+    if (elapsedTimer) {
+      clearInterval(elapsedTimer);
+      elapsedTimer = null;
     }
   }
 
@@ -323,7 +249,33 @@ document.addEventListener('DOMContentLoaded', () => {
     };
   }
 
-  btnStartCrawl.addEventListener('click', () => {
+  function renderProgress(p) {
+    if (!p) return;
+    statCrawled.textContent = p.crawledCount ?? 0;
+    statDiscovered.textContent = formatCount(p.discoveredCount);
+    statDepth.textContent = p.maxDepthReached ?? 0;
+    statErrors.textContent = p.errorCount ?? 0;
+
+    if (p.currentUrl) {
+      liveUrlTicker.textContent = `Fetching: ${p.currentUrl}`;
+    }
+
+    if (typeof p.percent === 'number') {
+      crawlProgressBar.style.width = `${p.percent}%`;
+      crawlProgressPercent.textContent = `${p.percent}%`;
+    }
+  }
+
+  function renderRunningState(p) {
+    const paused = p.status === 'paused';
+    liveStatusText.textContent = paused ? 'Audit Paused' : 'Crawling Active...';
+    btnPauseCrawl.textContent = paused ? 'Resume' : 'Pause';
+    pulseDot.style.animationPlayState = paused ? 'paused' : 'running';
+    pulseDot.style.opacity = '1';
+    renderProgress(p);
+  }
+
+  btnStartCrawl.addEventListener('click', async () => {
     clearUrlError();
     const config = getCrawlConfig();
 
@@ -339,149 +291,145 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
-    // Switch state to live crawl
-    isCrawling = true;
-    isPaused = false;
+    btnStartCrawl.disabled = true;
+    const res = await send('START_CRAWL', { config });
+    btnStartCrawl.disabled = false;
+
+    if (!res || !res.ok) {
+      showUrlError((res && res.error) || 'Could not start the crawl.');
+      return;
+    }
+
+    resumeBanner.style.display = 'none';
     switchView('live');
-
-    liveStatusText.textContent = 'Crawling Active...';
-    pulseDot.style.opacity = '1';
-    crawlProgressBar.style.width = '2%';
-    crawlProgressPercent.textContent = '2%';
     liveUrlTicker.textContent = `Fetching: ${config.startUrl}`;
-
-    statCrawled.textContent = '1';
-    statQueue.textContent = '0';
-    statDepth.textContent = '0';
-    statErrors.textContent = '0';
-
-    startTimer();
-
-    // Send start command to MV3 Service Worker
-    if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
-      chrome.runtime.sendMessage({
-        action: 'START_CRAWL',
-        config
-      }, (response) => {
-        if (chrome.runtime.lastError) {
-          console.warn('Service worker response fallback:', chrome.runtime.lastError.message);
-        }
-      });
-    }
+    renderRunningState({ status: 'running', crawledCount: 0, discoveredCount: 0, percent: 0 });
+    startTimer(0);
   });
 
-  btnPauseCrawl.addEventListener('click', () => {
-    isPaused = !isPaused;
-    if (isPaused) {
-      btnPauseCrawl.textContent = 'Resume';
-      liveStatusText.textContent = 'Audit Paused';
-      pulseDot.style.animationPlayState = 'paused';
-    } else {
-      btnPauseCrawl.textContent = 'Pause';
-      liveStatusText.textContent = 'Crawling Active...';
-      pulseDot.style.animationPlayState = 'running';
-    }
-
-    if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
-      chrome.runtime.sendMessage({
-        action: isPaused ? 'PAUSE_CRAWL' : 'RESUME_CRAWL'
-      });
-    }
+  btnPauseCrawl.addEventListener('click', async () => {
+    const pausing = btnPauseCrawl.textContent === 'Pause';
+    const p = await send(pausing ? 'PAUSE_CRAWL' : 'RESUME_CRAWL');
+    if (p) renderRunningState(p);
   });
 
-  btnStopCrawl.addEventListener('click', () => {
-    isCrawling = false;
-    isPaused = false;
-    stopTimer();
+  btnStopCrawl.addEventListener('click', async () => {
+    btnStopCrawl.disabled = true;
+    liveStatusText.textContent = 'Stopping...';
+    // The worker replies with CRAWL_COMPLETE once the in-flight page settles.
+    // The summary is populated from that, never from placeholder numbers.
+    await send('STOP_CRAWL');
+  });
 
-    if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
-      chrome.runtime.sendMessage({ action: 'STOP_CRAWL' });
+  btnResumeRun.addEventListener('click', async () => {
+    const runId = btnResumeRun.dataset.runId;
+    if (!runId) return;
+
+    const res = await send('RESUME_RUN', { runId });
+    if (!res || !res.ok) {
+      showUrlError((res && res.error) || 'Could not resume that run.');
+      return;
     }
 
-    // Populate mock Phase 1 summary for immediate UX preview
-    populateSummaryResults({
-      siteUrl: startUrlInput.value || 'https://example.com',
-      overallScore: 84,
-      statusTitle: 'Solid Architecture',
-      archScore: 78,
-      linksScore: 72,
-      indexScore: 91,
-      techScore: 88,
-      contentScore: 82,
-      schemaScore: 94,
-      criticalCount: 2,
-      warningsCount: 7,
-      passedCount: 45
-    });
-
-    switchView('summary');
+    resumeBanner.style.display = 'none';
+    switchView('live');
   });
 
   // =========================================================================
-  // 6. Audit Summary Population (FR-16, FR-17)
+  // 6. Audit Summary Population (FR-01 results only)
   // =========================================================================
 
-  function populateSummaryResults(data) {
-    summaryScore.textContent = data.overallScore ?? '--';
-    summaryStatusTitle.textContent = data.statusTitle || 'Audit Complete';
-    summarySiteUrl.textContent = data.siteUrl || '';
-    summaryStatusBadge.textContent = data.overallScore >= 80 ? 'PASSED' : 'NEEDS ATTENTION';
+  // A capped crawl is not a complete one — say which it was.
+  const RUN_OUTCOMES = {
+    complete: ['Crawl Complete', 'CRAWLED'],
+    'page-limit': ['Page Limit Reached', 'PARTIAL'],
+    stopped: ['Crawl Stopped', 'STOPPED']
+  };
 
-    scoreArch.textContent = data.archScore ?? '--';
-    scoreLinks.textContent = data.linksScore ?? '--';
-    scoreIndex.textContent = data.indexScore ?? '--';
-    scoreTech.textContent = data.techScore ?? '--';
-    scoreContent.textContent = data.contentScore ?? '--';
-    scoreSchema.textContent = data.schemaScore ?? '--';
+  /**
+   * Only crawl facts are shown. The six category scores and the issue
+   * breakdown belong to FR-16/FR-17 and stay '--' until those checks exist —
+   * a placeholder number here is indistinguishable from a real score. Fetch
+   * errors aren't classified issues either: a timeout is not an SEO defect.
+   */
+  function populateSummaryResults(summary) {
+    if (!summary) return;
+    const [title, badge] = RUN_OUTCOMES[summary.status] || ['Crawl Incomplete', 'INCOMPLETE'];
 
-    countCritical.textContent = data.criticalCount ?? 0;
-    countWarnings.textContent = data.warningsCount ?? 0;
-    countPassed.textContent = data.passedCount ?? 0;
+    summaryScore.textContent = '--';
+    summaryStatusTitle.textContent = title;
+    summaryStatusBadge.textContent = badge;
+
+    const found = summary.discoveredCount ? ` of ${formatCount(summary.discoveredCount)} found` : '';
+    summarySiteUrl.textContent =
+      `${summary.startUrl || ''} — ${formatCount(summary.crawledCount)} crawled${found}, ` +
+      `${formatCount(summary.errorCount)} errors`;
+
+    countCritical.textContent = '--';
+    countWarnings.textContent = '--';
+    countPassed.textContent = '--';
   }
 
-  // Dashboard & Export Launchers
-  btnOpenDashboard.addEventListener('click', () => {
-    if (typeof chrome !== 'undefined' && chrome.tabs && chrome.tabs.create) {
-      chrome.tabs.create({ url: chrome.runtime.getURL('src/dashboard/dashboard.html') });
-    } else {
-      alert('Dashboard launcher: Available in Chrome Extension context.');
+  // Export (FR-20) and Dashboard (FR-04) buttons stay disabled in the markup
+  // until those features exist — no listeners to wire yet.
+
+  // =========================================================================
+  // 7. Sync with the service worker (runs on every popup open)
+  // =========================================================================
+
+  chrome.runtime.onMessage.addListener((message) => {
+    if (!message || !message.type) return;
+
+    if (message.type === 'CRAWL_PROGRESS') {
+      renderProgress(message.progress);
+    } else if (message.type === 'CRAWL_COMPLETE') {
+      stopTimer();
+      btnStopCrawl.disabled = false;
+      populateSummaryResults(message.summary);
+      switchView('summary');
     }
   });
 
-  btnExportAudit.addEventListener('click', () => {
-    alert('Export options (CSV/JSON) will generate report from local IndexedDB.');
-  });
+  (async function syncWithWorker() {
+    const state = await send('GET_STATE');
+    if (!state) return;
 
-  // Listen for real-time messages from background service worker
-  if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage) {
-    chrome.runtime.onMessage.addListener((message) => {
-      if (!message || !message.type) return;
+    const { live, lastRun } = state;
 
-      if (message.type === 'CRAWL_PROGRESS') {
-        const p = message.progress;
-        if (p) {
-          statCrawled.textContent = p.crawledCount || 0;
-          statQueue.textContent = p.queueCount || 0;
-          statDepth.textContent = p.maxDepthReached || 0;
-          statErrors.textContent = p.errorCount || 0;
-
-          if (p.currentUrl) {
-            liveUrlTicker.textContent = `Fetching: ${p.currentUrl}`;
-          }
-
-          if (p.percent) {
-            crawlProgressBar.style.width = `${p.percent}%`;
-            crawlProgressPercent.textContent = `${p.percent}%`;
-          }
-        }
-      } else if (message.type === 'CRAWL_COMPLETE') {
-        isCrawling = false;
+    // A crawl is in flight: show it, wherever the popup was last left.
+    if (live && live.status !== 'idle') {
+      startUrlInput.value = live.startUrl || startUrlInput.value;
+      switchView('live');
+      renderRunningState(live);
+      if (live.status === 'paused') {
         stopTimer();
-        if (message.summary) {
-          populateSummaryResults(message.summary);
-        }
-        switchView('summary');
+        statElapsed.textContent = formatElapsed(live.elapsedMs || 0);
+      } else {
+        startTimer(live.elapsedMs);
       }
+      return;
+    }
+
+    detectActiveTab();
+
+    if (!lastRun) return;
+
+    // Last result stays available in the Summary tab without stealing the view.
+    populateSummaryResults({
+      status: lastRun.status,
+      startUrl: lastRun.startUrl,
+      crawledCount: lastRun.stats?.crawled,
+      discoveredCount: lastRun.stats?.discovered,
+      errorCount: lastRun.stats?.errors
     });
-  }
+
+    // Still marked running/paused with no live crawl means the worker was
+    // evicted mid-run. Stopped and page-limit runs ended on purpose.
+    if (lastRun.status === 'running' || lastRun.status === 'paused') {
+      resumeDetail.textContent =
+        `${formatCount(lastRun.stats?.crawled)} pages crawled of ${formatCount(lastRun.stats?.discovered)} found.`;
+      btnResumeRun.dataset.runId = lastRun.id;
+      resumeBanner.style.display = 'flex';
+    }
+  })();
 });

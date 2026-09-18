@@ -12,17 +12,20 @@ the product, not an implementation detail — see NG-2…NG-4 in `REQUIREMENTS.m
 
 ## Current state
 
-Spec + scaffold. `manifest.json` and the icons are real; `src/popup/popup.html`
-and `src/background/service-worker.js` are placeholders that exist so the
-extension loads unpacked. Nothing else is implemented.
+**FR-01 (crawler) is implemented** and has been run against a real site.
+Everything after it — silos, orphans, scoring, dashboard, export — is not.
+The popup's Export and Open Dashboard buttons are deliberately disabled until
+their FRs exist.
 
-**Not yet decided — don't assume, don't invent:**
+**Decided** (recorded in `REQUIREMENTS.md` §10):
 
-- Build tooling and framework (no `package.json`, no bundler, no React/Vue/TS
-  decision). Plain JS + no build step is the current default by absence.
-- Test runner. None. Don't reference one or write a config for one unasked.
-- The open questions in `REQUIREMENTS.md` §10 — including the big one:
-  fetch-only vs. rendered crawling.
+- Plain JS ES modules, no bundler, no build step — loads unpacked as-is.
+- Tests: `npm test` runs Node's built-in runner over `tests/`. No framework, no
+  dependencies; `package.json` exists only for `"type": "module"` and that script.
+- Crawling is fetch-only: raw HTML, regex-parsed (service workers have no DOM).
+
+**Still open — don't assume, don't invent:** the UI framework and the FR-04
+graph library (§10.7), and the rest of §10.
 
 ## Read order
 
@@ -38,20 +41,26 @@ extension loads unpacked. Nothing else is implemented.
 
 ```
 manifest.json          MV3 manifest — permissions justified in README.md
+package.json           "type": "module" + `npm test`. No dependencies.
 REQUIREMENTS.md        scope contract
 README.md              install, permissions table, known limitations
 assets/icons/          16/32/48/128 PNGs
 assets/fonts/          Inter, Plus Jakarta Sans
-src/background/        service worker — crawl orchestration (placeholder)
-src/popup/             toolbar popup (placeholder)
-src/shared/            intended reuse layer — types, utils, services,
-                       constants. Does not exist yet. Check here FIRST
-                       before writing anything new.
+src/background/        service-worker.js — message router
+                       crawler.js — fetch loop, discovery, persistence (IO)
+                       frontier.js — PURE: crawl order, page budget, discovery records
+src/shared/            the reuse layer — check here FIRST before writing anything:
+                       url.js (FR-02 normalization), parse.js (HTML/sitemap/
+                       robots, entity decoding), db.js (all IndexedDB access)
+src/popup/             toolbar popup
+src/styles/            theme.css (tokens, buttons), popup.css
+tests/                 crawler.test.mjs — covers the pure modules only
 docs/                  design docs, written when a thing is designed
 ```
 
-Paths under `src/` beyond the two placeholders are *intended*, not present.
-Verify before citing one.
+Logic that decides anything lives in a pure module (no `chrome.*`, no
+IndexedDB) so Node can test it. Keep it that way: when new logic needs a
+test, extract it the way `frontier.js` was extracted — don't mock chrome.
 
 ## The things that will bite
 
@@ -63,6 +72,14 @@ Verify before citing one.
   never `eval` a page's JSON-LD.
 - **The MV3 service worker gets evicted mid-crawl.** Persist progress
   incrementally; don't hold a crawl in memory.
+- **A capped crawl is not a complete crawl.** Runs end `complete`,
+  `page-limit` or `stopped`. Anything reasoning about the whole site (orphans,
+  depth, silos) must check it — on a `page-limit` run most sitemap URLs are
+  simply uncrawled, not orphaned.
+- **Unit tests passing ≠ the crawler works.** All 12 original tests passed on
+  a crawler that, on its first real site, never fetched the site's navigation
+  pages. Crawl behaviour gets checked against a live site's actual robots.txt,
+  sitemap and HTML before it's called done.
 - **Don't claim what Google does.** The product reports site-architecture
   facts. Not PageRank (NG-5), not confirmed cannibalization (NG-6), and
   cross-silo links are *potential* leaks, not errors (NG-7).
