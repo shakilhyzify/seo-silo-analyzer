@@ -97,9 +97,39 @@ async function persist(status) {
   }
 }
 
+/**
+ * Redirect hops observed for the fetch currently in flight, keyed by the URL
+ * the next hop will arrive at.
+ *
+ * fetch() follows redirects itself and reports only the endpoints — res.url
+ * and res.redirected. The 301/302 responses in between are invisible to it,
+ * so webRequest is the only way to see them (verified: MV3 dropped
+ * webRequestBlocking; observation is unchanged).
+ *
+ * The map lookup is the filter: only fetchText seeds it, so a hop for a URL we
+ * are not fetching is ignored, the map cannot grow, and traffic from tabs and
+ * other extensions is never stored. Deliberately no types/initiator filter —
+ * both guess how Chrome labels a service worker's own request, and a wrong
+ * guess drops every event with no error.
+ */
+const redirectHops = new Map();
+
+chrome.webRequest.onBeforeRedirect.addListener(
+  ({ url, redirectUrl, statusCode }) => {
+    const hops = redirectHops.get(url);
+    if (!hops) return;
+    hops.push({ url, status: statusCode });
+    redirectHops.delete(url);
+    redirectHops.set(redirectUrl, hops);
+  },
+  { urls: ['<all_urls>'] }
+);
+
 async function fetchText(url) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  const hops = [];
+  redirectHops.set(url, hops);
   try {
     const res = await fetch(url, { signal: controller.signal, credentials: 'omit' });
     const contentType = res.headers.get('content-type') || '';
@@ -116,6 +146,7 @@ async function fetchText(url) {
       contentType,
       finalUrl: res.url,
       redirected: res.redirected,
+      chain: [...hops, { url: res.url, status: res.status }],
       body
     };
   } catch (err) {
@@ -126,11 +157,15 @@ async function fetchText(url) {
       contentType: '',
       finalUrl: url,
       redirected: false,
+      chain: hops,   // hops seen before it failed; there is no terminal response
       body: '',
       error: true
     };
   } finally {
     clearTimeout(timer);
+    for (const [key, value] of redirectHops) {
+      if (value === hops) redirectHops.delete(key);
+    }
   }
 }
 
@@ -206,8 +241,6 @@ async function processOne({ url }) {
   if (!res.ok) state.stats.errors += 1;
   if (depth !== null && depth > state.stats.maxDepth) state.stats.maxDepth = depth;
 
-  // A redirect means the final URL is the page we actually got. Record both;
-  // FR-12 will walk the full chain, this only captures the endpoints.
   const finalUrl = normalizeUrl(res.finalUrl, url, state.scheme) || url;
   const redirected = res.redirected && finalUrl !== url;
   if (redirected && isSameSite(finalUrl, state.rootHost, state.config.includeSubdomains)) {
@@ -228,6 +261,7 @@ async function processOne({ url }) {
     statusText: res.statusText,
     contentType: res.contentType,
     fetchedAt: Date.now(),
+    redirectChain: res.chain.length > 1 ? res.chain : null,
     title: null,
     canonical: null,
     canonicalCount: 0,

@@ -44,6 +44,7 @@ Requested at install:
 | `unlimitedStorage` | Crawl data for 1,000+ URL sites is stored in IndexedDB; without this the extension shares the default quota. Chrome documents this permission as covering IndexedDB. |
 | `activeTab` | Read the current tab's URL to pre-fill the audit target, and act on that tab after a user gesture. |
 | `scripting` | Inject the DOM extractor and the on-page issue highlighter (FR-19). |
+| `webRequest` | Observation only. `fetch()` follows redirects and reports only the final URL, so this is the only way to record each hop of a redirect chain and its status code (FR-12). No request is blocked or modified — MV3 does not include `webRequestBlocking`. |
 | `host_permissions: *://*/*` | Crawling means fetching pages of the site being audited, which is cross-origin. |
 
 Not requested: `tabs`, `webNavigation`, `debugger`, `alarms`, `cookies`,
